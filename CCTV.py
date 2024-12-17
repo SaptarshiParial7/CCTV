@@ -23,6 +23,7 @@ face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_fronta
 # Initialize global variables
 cap = None
 running = False
+face_detected = False
 
 def compute_face_hash(face_image):
     """Compute a hash for the given face image."""
@@ -36,6 +37,9 @@ def is_face_already_logged(face_hash, date):
         df = pd.read_csv(log_file)
         existing_logs = df[(df["Face_ID"] == face_hash) & (df["Date"] == date)]
         return not existing_logs.empty
+    except pd.errors.EmptyDataError:
+        # Ignore empty CSV files
+        return False
     except Exception as e:
         print(f"Error reading CSV: {e}")
     return False
@@ -52,12 +56,15 @@ def log_face(face_hash, img_name, date, time):
         }])
         df = pd.concat([df, new_entry], ignore_index=True)
         df.to_csv(log_file, index=False)
+    except pd.errors.EmptyDataError:
+        # Ignore empty CSV files
+        pass
     except Exception as e:
         print(f"Error writing to CSV: {e}")
 
 def start_camera():
     """Start the camera and face detection."""
-    global cap, running
+    global cap, running, face_detected
 
     if running:
         return  # Avoid multiple threads
@@ -70,7 +77,7 @@ def start_camera():
     running = True
 
     def detect_faces():
-        global running
+        global face_detected
         print("Camera started. Press 'q' in the console to quit.")
 
         while running:
@@ -98,7 +105,7 @@ def start_camera():
                 time = timestamp.strftime("%H:%M:%S")
 
                 # Check if the face is already logged today
-                if not is_face_already_logged(face_hash, date):
+                if not face_detected and not is_face_already_logged(face_hash, date):
                     # Save the face image
                     img_name = f"face_{date}_{time.replace(':', '')}.jpg"
                     img_path = os.path.join(base_dir, img_name)
@@ -106,6 +113,9 @@ def start_camera():
 
                     # Log the face
                     log_face(face_hash, img_name, date, time)
+
+                    # Mark the face as detected
+                    face_detected = True
 
                 # Draw a rectangle around the face
                 cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
@@ -124,9 +134,10 @@ def start_camera():
 
 def stop_camera():
     """Stop the camera and close all windows."""
-    global cap, running
+    global cap, running, face_detected
 
     running = False
+    face_detected = False
     if cap:
         cap.release()
         cap = None
@@ -144,3 +155,4 @@ stop_button = Button(app, text="Stop Camera", command=stop_camera, width=20)
 stop_button.pack(pady=10)
 
 app.mainloop()
+
